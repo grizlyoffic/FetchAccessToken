@@ -5,6 +5,80 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <title>FreeFire · EAT to Access Token</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .spinner {
+            border: 4px solid rgba(255, 170, 51, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #ffaa33;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .success-badge {
+            background: #00aa00;
+            border-radius: 30px;
+            padding: 6px 20px;
+            color: white;
+            font-weight: bold;
+        }
+        .btn-secondary {
+            background: #2a3344;
+            border: 2px solid #ff8800;
+            border-radius: 40px;
+            padding: 14px 20px;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+            width: 100%;
+            transition: 0.1s;
+        }
+        .btn-secondary:hover {
+            background: #3a4455;
+        }
+        .btn-secondary:active {
+            transform: translateY(2px);
+        }
+        .data-value.black-bg {
+            background: #000000;
+            border: 2px solid #ffffff;
+            border-radius: 40px;
+            padding: 8px 18px;
+            display: inline-flex;
+            align-items: center;
+            gap: 16px;
+            word-break: break-all;
+            color: #ffffff;
+            font-weight: 600;
+            box-shadow: 0 0 10px rgba(255,255,255,0.2);
+        }
+        .copy-btn.white-stroke {
+            background: #000000;
+            border: 2px solid #ffffff;
+            border-radius: 30px;
+            padding: 8px 18px;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 0 #333333;
+            transition: 0.1s;
+            min-width: 70px;
+        }
+        .copy-btn.white-stroke:active {
+            transform: translateY(4px);
+            box-shadow: none;
+        }
+        .copy-btn.white-stroke.copied {
+            background: #00aa00 !important;
+            border-color: #ffffff;
+        }
+    </style>
 </head>
 <body>
     <div class="card">
@@ -67,6 +141,23 @@
             const loading = document.getElementById('loading');
             const errorMsg = document.getElementById('errorMsg');
 
+            // Check URL parameters on load
+            function checkUrlParams() {
+                try {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const eatParam = urlParams.get('eat');
+                    
+                    if (eatParam) {
+                        eatInput.value = eatParam;
+                        setTimeout(() => {
+                            fetchEatToken(eatParam);
+                        }, 500);
+                    }
+                } catch (e) {
+                    console.log('URL param check failed:', e);
+                }
+            }
+
             // Extract EAT from full ticket URL
             function extractEatFromUrl() {
                 const fullUrl = ticketUrlInput.value.trim();
@@ -78,27 +169,21 @@
                 try {
                     let eatToken = null;
                     
-                    // Method 1: If it's a URL with query params
+                    // Method 1: Try to extract from URL query parameters
                     if (fullUrl.includes('?') || fullUrl.includes('&')) {
-                        // Try to create URL object
-                        try {
-                            const urlObj = new URL(fullUrl);
-                            eatToken = urlObj.searchParams.get('eat');
-                        } catch (e) {
-                            // If URL object fails, use regex
-                            const eatMatch = fullUrl.match(/[?&]eat=([^&]+)/);
-                            if (eatMatch) {
-                                eatToken = eatMatch[1];
-                            }
+                        // Try regex to find eat parameter
+                        const eatMatch = fullUrl.match(/[?&]eat=([^&]+)/);
+                        if (eatMatch && eatMatch[1]) {
+                            eatToken = eatMatch[1];
                         }
                     }
                     
-                    // Method 2: If it's a long hex string (like the example)
+                    // Method 2: If it's a long hex string
                     if (!eatToken && /^[a-f0-9]{100,}$/i.test(fullUrl)) {
                         eatToken = fullUrl;
                     }
                     
-                    // Method 3: Try regex to find any hex string of sufficient length
+                    // Method 3: Try to find any long hex string in the text
                     if (!eatToken) {
                         const hexMatch = fullUrl.match(/[a-f0-9]{100,}/i);
                         if (hexMatch) {
@@ -117,7 +202,7 @@
                 }
             }
 
-            // Main function to fetch EAT token - DIRECT API CALL
+            // Main function to fetch EAT token
             async function fetchEatToken(token) {
                 if (!token) {
                     showError('❌ Please enter an EAT token');
@@ -137,14 +222,13 @@
                     
                     console.log('Fetching from:', apiUrl);
                     
-                    // Simple direct fetch
                     const response = await fetch(apiUrl, {
                         method: 'GET',
                         headers: {
                             'Accept': 'application/json',
                             'Content-Type': 'application/json'
                         },
-                        mode: 'cors'  // Explicitly set cors mode
+                        mode: 'cors'
                     });
                     
                     // Hide loading
@@ -209,7 +293,7 @@
             function renderApiResponse(data) {
                 let html = '';
                 
-                // Important fields to display with black background and white stroke
+                // Important fields to display
                 const fields = [
                     {label: 'account_id', key: 'account_id'},
                     {label: 'account_nickname', key: 'account_nickname'},
@@ -243,348 +327,83 @@
 
                 // Add copy functionality
                 document.querySelectorAll('.copy-btn').forEach(btn => {
-                    btn.addEventListener('click', function(e) {
+                    // Remove any existing listeners
+                    const newBtn = btn.cloneNode(true);
+                    btn.parentNode.replaceChild(newBtn, btn);
+                    
+                    newBtn.addEventListener('click', function(e) {
                         e.stopPropagation();
-                        let textToCopy = this.getAttribute('data-copy');
+                        e.preventDefault();
                         
-                        // Modern clipboard API
-                        navigator.clipboard.writeText(textToCopy).then(() => {
-                            // Visual feedback
-                            const originalText = this.textContent;
-                            this.textContent = 'copied!';
-                            this.style.background = '#00aa00';
-                            this.style.borderColor = '#ffffff';
-                            setTimeout(() => {
-                                this.textContent = originalText;
-                                this.style.background = '#000000';
-                            }, 1500);
-                        }).catch(() => {
-                            // Fallback
-                            const textarea = document.createElement('textarea');
-                            textarea.value = textToCopy;
-                            document.body.appendChild(textarea);
-                            textarea.select();
-                            document.execCommand('copy');
-                            document.body.removeChild(textarea);
-                            
-                            this.textContent = 'copied!';
-                            this.style.background = '#00aa00';
-                            setTimeout(() => {
-                                this.textContent = 'copy';
-                                this.style.background = '#000000';
-                            }, 1500);
-                        });
+                        let textToCopy = this.getAttribute('data-copy');
+                        let originalText = this.textContent;
+                        let originalBg = this.style.background;
+                        
+                        // Try modern clipboard API first
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(textToCopy).then(() => {
+                                // Success feedback
+                                this.textContent = 'copied!';
+                                this.style.background = '#00aa00';
+                                this.classList.add('copied');
+                                
+                                setTimeout(() => {
+                                    this.textContent = originalText;
+                                    this.style.background = '#000000';
+                                    this.classList.remove('copied');
+                                }, 1500);
+                            }).catch(() => {
+                                // Fallback to execCommand
+                                fallbackCopy(this, textToCopy, originalText);
+                            });
+                        } else {
+                            // Fallback for older browsers
+                            fallbackCopy(this, textToCopy, originalText);
+                        }
                     });
                 });
             }
+            
+            // Fallback copy function
+            function fallbackCopy(btn, text, originalText) {
+                try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    textarea.setSelectionRange(0, 99999);
+                    
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    
+                    if (successful) {
+                        btn.textContent = 'copied!';
+                        btn.style.background = '#00aa00';
+                        
+                        setTimeout(() => {
+                            btn.textContent = originalText;
+                            btn.style.background = '#000000';
+                        }, 1500);
+                    } else {
+                        alert('Press Ctrl+C to copy: ' + text);
+                    }
+                } catch (err) {
+                    alert('Press Ctrl+C to copy: ' + text);
+                }
+            }
 
-            // Auto-fetch on page load if there's a token in the input (for demo)
+            // Auto-fetch on page load if there's a token in the input
             if (eatInput.value) {
                 setTimeout(() => {
                     fetchEatToken(eatInput.value);
                 }, 500);
             }
-        });
-    </script>
-
-    <!-- Simple spinner CSS -->
-    <style>
-        .spinner {
-            border: 4px solid rgba(255, 170, 51, 0.3);
-            border-radius: 50%;
-            border-top: 4px solid #ffaa33;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .success-badge {
-            background: #00aa00;
-            border-radius: 30px;
-            padding: 6px 20px;
-            color: white;
-            font-weight: bold;
-        }
-        .btn-secondary {
-            background: #2a3344;
-            border: 2px solid #ff8800;
-            border-radius: 40px;
-            padding: 14px 20px;
-            font-weight: 600;
-            color: white;
-            cursor: pointer;
-            font-size: 1rem;
-            width: 100%;
-            transition: 0.1s;
-        }
-        .btn-secondary:hover {
-            background: #3a4455;
-        }
-        .btn-secondary:active {
-            transform: translateY(2px);
-        }
-    </style>
-</body>
-</html>                    if (!eatToken) {
-                        const eatMatch = fullUrl.match(/[?&]eat=([^&]+)/);
-                        if (eatMatch) {
-                            eatToken = eatMatch[1];
-                        }
-                    }
-                    
-                    if (eatToken) {
-                        eatInput.value = eatToken;
-                        fetchEatToken(eatToken);
-                    } else {
-                        showError('Could not extract EAT token from URL');
-                    }
-                } catch (e) {
-                    // If URL parsing fails, try to just get the long hex string
-                    const hexMatch = fullUrl.match(/[a-f0-9]{100,}/i);
-                    if (hexMatch) {
-                        eatInput.value = hexMatch[0];
-                        fetchEatToken(hexMatch[0]);
-                    } else {
-                        showError('Invalid URL format');
-                    }
-                }
-            }
-
-            // Main function to fetch EAT token
-            async function fetchEatToken(token) {
-                if (!token) {
-                    showError('❌ Please enter an EAT token');
-                    return;
-                }
-
-                // Clear previous results
-                resultBox.style.display = 'none';
-                errorMsg.style.display = 'none';
-                
-                // Show loading
-                loading.style.display = 'block';
-                
-                try {
-                    // Use multiple CORS proxies to avoid "Failed to fetch" error
-                    const apiUrl = `https://eat-access.vercel.app/Eat?eat_token=${encodeURIComponent(token)}`;
-                    
-                    // Try with different approaches
-                    let data = null;
-                    let error = null;
-                    
-                    // Approach 1: Direct fetch with no-cors mode (may not give response body)
-                    try {
-                        const response = await fetch(apiUrl, {
-                            method: 'GET',
-                            headers: {
-                                'Accept': 'application/json',
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        
-                        if (response.ok) {
-                            data = await response.json();
-                        } else {
-                            error = `HTTP error: ${response.status}`;
-                        }
-                    } catch (e) {
-                        error = e.message;
-                    }
-                    
-                    // If direct fetch fails, try with CORS proxy
-                    if (!data) {
-                        try {
-                            // Using cors-anywhere proxy
-                            const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-                            const proxyResponse = await fetch(proxyUrl + apiUrl, {
-                                headers: {
-                                    'Origin': window.location.origin,
-                                    'X-Requested-With': 'XMLHttpRequest'
-                                }
-                            });
-                            
-                            if (proxyResponse.ok) {
-                                data = await proxyResponse.json();
-                                error = null;
-                            }
-                        } catch (proxyError) {
-                            console.log('Proxy also failed:', proxyError);
-                        }
-                    }
-                    
-                    // Hide loading
-                    loading.style.display = 'none';
-                    
-                    if (data) {
-                        // Check if response contains error
-                        if (data.status === 'error' || data.error) {
-                            showError(data.message || data.error || 'Invalid EAT token or API error');
-                            return;
-                        }
-                        
-                        // Check if we have the expected success response
-                        if (data.status === 'success' || data.account_id) {
-                            renderApiResponse(data);
-                            resultBox.style.display = 'block';
-                        } else {
-                            showError('Unexpected API response format');
-                        }
-                    } else {
-                        showError('Network error: ' + (error || 'Failed to fetch. Please try again.'));
-                    }
-                    
-                } catch (error) {
-                    loading.style.display = 'none';
-                    showError('Network error: ' + error.message);
-                    console.error('API call failed:', error);
-                }
-            }
-
-            // Extract from URL button click
-            extractBtn.addEventListener('click', extractEatFromUrl);
-
-            // Proceed button click
-            proceedBtn.addEventListener('click', function() {
-                fetchEatToken(eatInput.value.trim());
-            });
-
-            // Allow Enter key in inputs
-            eatInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    fetchEatToken(eatInput.value.trim());
-                }
-            });
-
-            ticketUrlInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    extractEatFromUrl();
-                }
-            });
-
-            function showError(message) {
-                errorMsg.innerHTML = `❌ ${message}`;
-                errorMsg.style.display = 'block';
-                resultBox.style.display = 'none';
-                loading.style.display = 'none';
-            }
-
-            function renderApiResponse(data) {
-                let html = '';
-                
-                // Important fields to display with black background and white stroke
-                const fields = [
-                    {label: 'account_id', key: 'account_id'},
-                    {label: 'account_nickname', key: 'account_nickname'},
-                    {label: 'open_id', key: 'open_id'},
-                    {label: 'access_token', key: 'access_token'},
-                    {label: 'region', key: 'region'}
-                ];
-
-                fields.forEach(f => {
-                    let value = data[f.key] || '—';
-                    html += `<div class="data-row">
-                        <span class="data-label">${f.label}</span>
-                        <span class="data-value black-bg">${value} <button class="copy-btn white-stroke" data-copy="${value}">copy</button></span>
-                    </div>`;
-                });
-
-                // Optional credit fields
-                if (data.credit) {
-                    creditLine.innerHTML = `<span class="data-label" style="color: #ffc285;">⭐ credit</span><span class="data-value black-bg">${data.credit}</span>`;
-                } else {
-                    creditLine.innerHTML = '';
-                }
-                
-                if (data['Power By']) {
-                    powerbyLine.innerHTML = `<span class="data-label" style="color: #ffc285;">⚡ power by</span><span class="data-value black-bg">${data['Power By']}</span>`;
-                } else {
-                    powerbyLine.innerHTML = '';
-                }
-
-                resultData.innerHTML = html;
-
-                // Add copy functionality
-                document.querySelectorAll('.copy-btn').forEach(btn => {
-                    btn.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        let textToCopy = this.getAttribute('data-copy');
-                        
-                        // Modern clipboard API
-                        navigator.clipboard.writeText(textToCopy).then(() => {
-                            // Visual feedback
-                            const originalText = this.textContent;
-                            this.textContent = 'copied!';
-                            this.style.background = '#00aa00';
-                            setTimeout(() => {
-                                this.textContent = originalText;
-                                this.style.background = '#2e3b5b';
-                            }, 1500);
-                        }).catch(() => {
-                            // Fallback
-                            const textarea = document.createElement('textarea');
-                            textarea.value = textToCopy;
-                            document.body.appendChild(textarea);
-                            textarea.select();
-                            document.execCommand('copy');
-                            document.body.removeChild(textarea);
-                            
-                            this.textContent = 'copied!';
-                            this.style.background = '#00aa00';
-                            setTimeout(() => {
-                                this.textContent = 'copy';
-                                this.style.background = '#2e3b5b';
-                            }, 1500);
-                        });
-                    });
-                });
-            }
-
-            // Check URL params on load
+            
+            // Check URL params
             checkUrlParams();
         });
     </script>
-
-    <!-- Simple spinner CSS -->
-    <style>
-        .spinner {
-            border: 4px solid rgba(255, 170, 51, 0.3);
-            border-radius: 50%;
-            border-top: 4px solid #ffaa33;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .success-badge {
-            background: #00aa00;
-            border-radius: 30px;
-            padding: 6px 20px;
-            color: white;
-            font-weight: bold;
-        }
-        .btn-secondary {
-            background: #2a3344;
-            border: 2px solid #ff8800;
-            border-radius: 40px;
-            padding: 14px 20px;
-            font-weight: 600;
-            color: white;
-            cursor: pointer;
-            font-size: 1rem;
-            width: 100%;
-            transition: 0.1s;
-        }
-        .btn-secondary:hover {
-            background: #3a4455;
-        }
-    </style>
 </body>
 </html>
