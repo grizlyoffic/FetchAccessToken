@@ -19,6 +19,15 @@
                 <button class="btn-primary" id="proceedEatBtn" style="font-size: 1.2rem; padding: 16px;">🚀 PROCEED & FETCH</button>
             </div>
             
+            <!-- Manual URL input section (for full URL with parameters) -->
+            <div style="margin: 20px 0; text-align: center;">
+                <span style="color: #ffaa33;">OR</span>
+            </div>
+            
+            <div class="label"><span>🔗 Full Ticket URL</span></div>
+            <input type="text" id="ticketUrlInput" class="field" placeholder="Paste full ticket URL...">
+            <button class="btn-secondary" id="extractFromUrlBtn" style="margin-top: 12px;">🔍 Extract EAT from URL</button>
+            
             <!-- Loading indicator -->
             <div id="loading" style="display: none; text-align: center; padding: 20px;">
                 <div class="spinner"></div>
@@ -48,7 +57,9 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const proceedBtn = document.getElementById('proceedEatBtn');
+            const extractBtn = document.getElementById('extractFromUrlBtn');
             const eatInput = document.getElementById('eatInput');
+            const ticketUrlInput = document.getElementById('ticketUrlInput');
             const resultBox = document.getElementById('resultBox');
             const resultData = document.getElementById('resultData');
             const creditLine = document.getElementById('creditLine');
@@ -56,12 +67,72 @@
             const loading = document.getElementById('loading');
             const errorMsg = document.getElementById('errorMsg');
 
-            // Hide loading initially
-            loading.style.display = 'none';
-
-            proceedBtn.addEventListener('click', async function() {
-                let token = eatInput.value.trim();
+            // Check URL parameters on load (for direct links)
+            function checkUrlParams() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const eatParam = urlParams.get('eat');
+                const urlParam = urlParams.get('url');
                 
+                if (eatParam) {
+                    eatInput.value = eatParam;
+                    fetchEatToken(eatParam);
+                } else if (urlParam) {
+                    ticketUrlInput.value = decodeURIComponent(urlParam);
+                    extractEatFromUrl();
+                }
+            }
+
+            // Extract EAT from full ticket URL
+            function extractEatFromUrl() {
+                const fullUrl = ticketUrlInput.value.trim();
+                if (!fullUrl) {
+                    showError('Please paste a ticket URL');
+                    return;
+                }
+                
+                try {
+                    // Try to extract eat parameter from URL
+                    let eatToken = null;
+                    
+                    // Method 1: Check if it's already a URL with query params
+                    if (fullUrl.includes('?eat=') || fullUrl.includes('&eat=')) {
+                        const urlObj = new URL(fullUrl);
+                        eatToken = urlObj.searchParams.get('eat');
+                    }
+                    
+                    // Method 2: If it's a long hex string (like the example)
+                    if (!eatToken && /^[a-f0-9]{100,}$/i.test(fullUrl)) {
+                        eatToken = fullUrl;
+                    }
+                    
+                    // Method 3: Try regex to find eat parameter
+                    if (!eatToken) {
+                        const eatMatch = fullUrl.match(/[?&]eat=([^&]+)/);
+                        if (eatMatch) {
+                            eatToken = eatMatch[1];
+                        }
+                    }
+                    
+                    if (eatToken) {
+                        eatInput.value = eatToken;
+                        fetchEatToken(eatToken);
+                    } else {
+                        showError('Could not extract EAT token from URL');
+                    }
+                } catch (e) {
+                    // If URL parsing fails, try to just get the long hex string
+                    const hexMatch = fullUrl.match(/[a-f0-9]{100,}/i);
+                    if (hexMatch) {
+                        eatInput.value = hexMatch[0];
+                        fetchEatToken(hexMatch[0]);
+                    } else {
+                        showError('Invalid URL format');
+                    }
+                }
+            }
+
+            // Main function to fetch EAT token
+            async function fetchEatToken(token) {
                 if (!token) {
                     showError('❌ Please enter an EAT token');
                     return;
@@ -75,27 +146,72 @@
                 loading.style.display = 'block';
                 
                 try {
-                    // REAL API CALL
+                    // Use multiple CORS proxies to avoid "Failed to fetch" error
                     const apiUrl = `https://eat-access.vercel.app/Eat?eat_token=${encodeURIComponent(token)}`;
                     
-                    const response = await fetch(apiUrl);
-                    const data = await response.json();
+                    // Try with different approaches
+                    let data = null;
+                    let error = null;
+                    
+                    // Approach 1: Direct fetch with no-cors mode (may not give response body)
+                    try {
+                        const response = await fetch(apiUrl, {
+                            method: 'GET',
+                            headers: {
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            data = await response.json();
+                        } else {
+                            error = `HTTP error: ${response.status}`;
+                        }
+                    } catch (e) {
+                        error = e.message;
+                    }
+                    
+                    // If direct fetch fails, try with CORS proxy
+                    if (!data) {
+                        try {
+                            // Using cors-anywhere proxy
+                            const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+                            const proxyResponse = await fetch(proxyUrl + apiUrl, {
+                                headers: {
+                                    'Origin': window.location.origin,
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            });
+                            
+                            if (proxyResponse.ok) {
+                                data = await proxyResponse.json();
+                                error = null;
+                            }
+                        } catch (proxyError) {
+                            console.log('Proxy also failed:', proxyError);
+                        }
+                    }
                     
                     // Hide loading
                     loading.style.display = 'none';
                     
-                    // Check if response contains error
-                    if (data.status === 'error' || data.error) {
-                        showError(data.message || 'Invalid EAT token or API error');
-                        return;
-                    }
-                    
-                    // Check if we have the expected success response
-                    if (data.status === 'success' || data.account_id) {
-                        renderApiResponse(data);
-                        resultBox.style.display = 'block';
+                    if (data) {
+                        // Check if response contains error
+                        if (data.status === 'error' || data.error) {
+                            showError(data.message || data.error || 'Invalid EAT token or API error');
+                            return;
+                        }
+                        
+                        // Check if we have the expected success response
+                        if (data.status === 'success' || data.account_id) {
+                            renderApiResponse(data);
+                            resultBox.style.display = 'block';
+                        } else {
+                            showError('Unexpected API response format');
+                        }
                     } else {
-                        showError('Unexpected API response format');
+                        showError('Network error: ' + (error || 'Failed to fetch. Please try again.'));
                     }
                     
                 } catch (error) {
@@ -103,18 +219,40 @@
                     showError('Network error: ' + error.message);
                     console.error('API call failed:', error);
                 }
+            }
+
+            // Extract from URL button click
+            extractBtn.addEventListener('click', extractEatFromUrl);
+
+            // Proceed button click
+            proceedBtn.addEventListener('click', function() {
+                fetchEatToken(eatInput.value.trim());
+            });
+
+            // Allow Enter key in inputs
+            eatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    fetchEatToken(eatInput.value.trim());
+                }
+            });
+
+            ticketUrlInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    extractEatFromUrl();
+                }
             });
 
             function showError(message) {
                 errorMsg.innerHTML = `❌ ${message}`;
                 errorMsg.style.display = 'block';
                 resultBox.style.display = 'none';
+                loading.style.display = 'none';
             }
 
             function renderApiResponse(data) {
                 let html = '';
                 
-                // Important fields to display
+                // Important fields to display with black background and white stroke
                 const fields = [
                     {label: 'account_id', key: 'account_id'},
                     {label: 'account_nickname', key: 'account_nickname'},
@@ -127,16 +265,21 @@
                     let value = data[f.key] || '—';
                     html += `<div class="data-row">
                         <span class="data-label">${f.label}</span>
-                        <span class="data-value">${value} <button class="copy-btn" data-copy="${value}">copy</button></span>
+                        <span class="data-value black-bg">${value} <button class="copy-btn white-stroke" data-copy="${value}">copy</button></span>
                     </div>`;
                 });
 
                 // Optional credit fields
                 if (data.credit) {
-                    creditLine.innerHTML = `<span class="data-label" style="color: #ffc285;">⭐ credit</span><span class="data-value">${data.credit}</span>`;
+                    creditLine.innerHTML = `<span class="data-label" style="color: #ffc285;">⭐ credit</span><span class="data-value black-bg">${data.credit}</span>`;
+                } else {
+                    creditLine.innerHTML = '';
                 }
+                
                 if (data['Power By']) {
-                    powerbyLine.innerHTML = `<span class="data-label" style="color: #ffc285;">⚡ power by</span><span class="data-value">${data['Power By']}</span>`;
+                    powerbyLine.innerHTML = `<span class="data-label" style="color: #ffc285;">⚡ power by</span><span class="data-value black-bg">${data['Power By']}</span>`;
+                } else {
+                    powerbyLine.innerHTML = '';
                 }
 
                 resultData.innerHTML = html;
@@ -152,8 +295,10 @@
                             // Visual feedback
                             const originalText = this.textContent;
                             this.textContent = 'copied!';
+                            this.style.background = '#00aa00';
                             setTimeout(() => {
                                 this.textContent = originalText;
+                                this.style.background = '#2e3b5b';
                             }, 1500);
                         }).catch(() => {
                             // Fallback
@@ -165,13 +310,18 @@
                             document.body.removeChild(textarea);
                             
                             this.textContent = 'copied!';
+                            this.style.background = '#00aa00';
                             setTimeout(() => {
                                 this.textContent = 'copy';
+                                this.style.background = '#2e3b5b';
                             }, 1500);
                         });
                     });
                 });
             }
+
+            // Check URL params on load
+            checkUrlParams();
         });
     </script>
 
@@ -196,6 +346,21 @@
             padding: 6px 20px;
             color: white;
             font-weight: bold;
+        }
+        .btn-secondary {
+            background: #2a3344;
+            border: 2px solid #ff8800;
+            border-radius: 40px;
+            padding: 14px 20px;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+            width: 100%;
+            transition: 0.1s;
+        }
+        .btn-secondary:hover {
+            background: #3a4455;
         }
     </style>
 </body>
