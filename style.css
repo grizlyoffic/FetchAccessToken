@@ -209,6 +209,42 @@ h2 {
     min-width: 120px;
 }
 
+/* Black background for UID and values with white stroke */
+.data-value.black-bg {
+    background: #000000;
+    border: 2px solid #ffffff;
+    border-radius: 40px;
+    padding: 8px 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    word-break: break-all;
+    color: #ffffff;
+    font-weight: 600;
+    box-shadow: 0 0 10px rgba(255,255,255,0.2);
+}
+
+/* White stroke button */
+.copy-btn.white-stroke {
+    background: #000000;
+    border: 2px solid #ffffff;
+    border-radius: 30px;
+    padding: 8px 18px;
+    font-weight: 600;
+    color: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    box-shadow: 0 4px 0 #333333;
+    transition: 0.1s;
+    min-width: 70px;
+}
+
+.copy-btn.white-stroke:active {
+    transform: translateY(4px);
+    box-shadow: none;
+}
+
+/* Regular data value (fallback) */
 .data-value {
     font-weight: 600;
     background: #1e253f;
@@ -296,7 +332,7 @@ h2 {
         align-items: flex-start;
     }
     
-    .data-value {
+    .data-value.black-bg, .data-value {
         width: 100%;
         justify-content: space-between;
     }
@@ -305,4 +341,4 @@ h2 {
         font-size: 1.2rem;
         padding: 16px;
     }
-}
+    }
